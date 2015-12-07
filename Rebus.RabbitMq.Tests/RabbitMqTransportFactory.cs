@@ -56,6 +56,7 @@ namespace Rebus.RabbitMq.Tests
             using (var connection = connectionFactory.CreateConnection())
             using (var model = connection.CreateModel())
             {
+                model.ExchangeDelete(queueName);
                 model.QueueDelete(queueName);
             }
         }

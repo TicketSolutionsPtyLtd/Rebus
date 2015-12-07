@@ -21,8 +21,6 @@ namespace Rebus.RabbitMq
     /// </summary>
     public class RabbitMqTransport : ITransport, IDisposable, IInitializable, ISubscriptionStorage
     {
-        const string DirectExchangeName = "RebusDirect";
-        const string TopicExchangeName = "RebusTopics";
         const string CurrentModelItemsKey = "rabbitmq-current-model";
         const string OutgoingMessagesItemsKey = "rabbitmq-outgoing-messages";
 
@@ -55,9 +53,8 @@ namespace Rebus.RabbitMq
          
             using (var model = connection.CreateModel())
             {
-                model.ExchangeDeclare(DirectExchangeName, ExchangeType.Direct, true);
-                model.ExchangeDeclare(TopicExchangeName, ExchangeType.Topic, true);
-
+                model.ExchangeDeclare(address, ExchangeType.Fanout, true);
+                
                 var arguments = new Dictionary<string, object>
                 {
                     {"x-ha-policy", "all"}
@@ -65,7 +62,7 @@ namespace Rebus.RabbitMq
 
                 model.QueueDeclare(address, exclusive: false, durable: true, autoDelete: false, arguments: arguments);
 
-                model.QueueBind(address, DirectExchangeName, address);
+                model.QueueBind(address, address, string.Empty);
             }
         }
 
@@ -188,34 +185,8 @@ namespace Rebus.RabbitMq
 
                 props.Persistent = !express;
 
-                var routingKey = new FullyQualifiedRoutingKey(destinationAddress);
-
-                model.BasicPublish(routingKey.ExchangeName, routingKey.RoutingKey, props, message.Body);
+                model.BasicPublish(destinationAddress, string.Empty, props, message.Body);
             }
-        }
-
-        class FullyQualifiedRoutingKey
-        {
-            public FullyQualifiedRoutingKey(string destinationAddress)
-            {
-                if (destinationAddress == null) throw new ArgumentNullException("destinationAddress");
-
-                var tokens = destinationAddress.Split('@');
-
-                if (tokens.Length > 1)
-                {
-                    ExchangeName = tokens.Last();
-                    RoutingKey = string.Join("@", tokens.Take(tokens.Length - 1));
-                }
-                else
-                {
-                    ExchangeName = DirectExchangeName;
-                    RoutingKey = destinationAddress;
-                }
-            }
-
-            public string ExchangeName { get; private set; }
-            public string RoutingKey { get; private set; }
         }
 
         static TimeSpan? GetTimeToBeReceivedOrNull(TransportMessage message)
@@ -263,26 +234,33 @@ namespace Rebus.RabbitMq
 
         public async Task<string[]> GetSubscriberAddresses(string topic)
         {
-            return new[] { string.Format("{0}@{1}", topic, TopicExchangeName) };
+            var topicAddress = topic.Split(new[] { "," }, StringSplitOptions.RemoveEmptyEntries).First();
+
+            return new[] { topicAddress };
         }
 
         public async Task RegisterSubscriber(string topic, string subscriberAddress)
         {
+            var topicAddress = topic.Split( new [] { "," }, StringSplitOptions.RemoveEmptyEntries).First();
+
             var connection = _connectionManager.GetConnection();
 
             using (var model = connection.CreateModel())
             {
-                model.QueueBind(Address, TopicExchangeName, topic);
+                model.ExchangeDeclare(topicAddress, ExchangeType.Fanout);
+                model.ExchangeBind(Address, topicAddress, string.Empty);
             }
         }
 
         public async Task UnregisterSubscriber(string topic, string subscriberAddress)
         {
+            var topicAddress = topic.Split(new[] { "," }, StringSplitOptions.RemoveEmptyEntries).First();
+
             var connection = _connectionManager.GetConnection();
 
             using (var model = connection.CreateModel())
             {
-                model.QueueUnbind(Address, TopicExchangeName, topic, new Dictionary<string, object>());
+                model.ExchangeBind(Address, topicAddress, string.Empty, new Dictionary<string, object>());
             }
         }
 

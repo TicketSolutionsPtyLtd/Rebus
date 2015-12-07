@@ -22,6 +22,7 @@ namespace Rebus.RabbitMq.Tests
             RabbitMqTransportFactory.DeleteQueue(_publisherQueueName);
             RabbitMqTransportFactory.DeleteQueue(_subscriber1QueueName);
             RabbitMqTransportFactory.DeleteQueue(_subscriber2QueueName);
+            RabbitMqTransportFactory.DeleteQueue("System.String");
 
             _publisher = GetBus(_publisherQueueName);
         }
