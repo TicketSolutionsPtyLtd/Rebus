@@ -115,24 +115,24 @@ namespace Rebus.AmazonSQS
 
             _log.Info("Purging {0} (by receiving all messages from the queue)", Address);
 
-            try
-            {
+                try
+                {
                 using (var client = new AmazonSQSClient(_accessKeyId, _secretAccessKey, _amazonSqsConfig))
                 {
                     var stopwatch = Stopwatch.StartNew();
 
                     while (true)
                     {
-                        var response = client.ReceiveMessage(new ReceiveMessageRequest(_queueUrl)
-                        {
-                            MaxNumberOfMessages = 10
-                        });
+                    var response = client.ReceiveMessage(new ReceiveMessageRequest(_queueUrl)
+                    {
+                        MaxNumberOfMessages = 10
+                    });
 
                         if (!response.Messages.Any()) break;
 
                         var deleteResponse = client.DeleteMessageBatch(_queueUrl, response.Messages
-                            .Select(m => new DeleteMessageBatchRequestEntry(m.MessageId, m.ReceiptHandle))
-                            .ToList());
+                        .Select(m => new DeleteMessageBatchRequestEntry(m.MessageId, m.ReceiptHandle))
+                        .ToList());
 
                         if (deleteResponse.Failed.Any())
                         {
@@ -140,20 +140,19 @@ namespace Rebus.AmazonSQS
                                 deleteResponse.Failed.Select(f => $"{f.Message} ({f.Id})"));
 
                             throw new RebusApplicationException(
-                                $@"Error {deleteResponse.HttpStatusCode} while purging: 
-{errors}");
+                                $@"Error {deleteResponse.HttpStatusCode} while purging: {errors}");
                         }
-                    }
+                        }
 
                     _log.Info($"Purging {Address} took {stopwatch.Elapsed.TotalSeconds:0.0} s");
                 }
             }
             catch (AmazonSQSException exception) when (exception.StatusCode == HttpStatusCode.BadRequest)
-            {
+                {
                 if (exception.Message.Contains("queue does not exist")) return;
 
                 throw;
-            }
+                }
             catch (Exception exception)
             {
                 throw new RebusApplicationException(exception, $"Error while purging {Address}");
@@ -388,6 +387,21 @@ namespace Rebus.AmazonSQS
         {
             var headers = message.MessageAttributes.ToDictionary(kv => kv.Key, kv => kv.Value.StringValue);
 
+            if (!headers.ContainsKey(Headers.ContentType))
+                headers[Headers.ContentType] = "application/json;charset=utf-8";
+
+            if (!headers.ContainsKey(Headers.ReturnAddress))
+                headers[Headers.ReturnAddress] = Address;
+
+            if (!headers.ContainsKey(Headers.MessageId))
+                headers[Headers.MessageId] = message.MessageId;
+
+            if (!headers.ContainsKey(Headers.CorrelationId))
+                headers[Headers.CorrelationId] = message.MessageId;
+
+            if (!headers.ContainsKey(Headers.Intent))
+                headers[Headers.Intent] = Headers.IntentOptions.PublishSubscribe;
+
             return new TransportMessage(headers, GetBodyBytes(message.Body));
 
         }
@@ -398,7 +412,14 @@ namespace Rebus.AmazonSQS
 
         private byte[] GetBodyBytes(string bodyText)
         {
+            try
+            {
             return Convert.FromBase64String(bodyText);
+        }
+            catch(Exception)
+            {
+                return System.Text.Encoding.UTF8.GetBytes(bodyText);
+            }
         }
         private Dictionary<string, MessageAttributeValue> CreateAttributesFromHeaders(Dictionary<string, string> headers)
         {
